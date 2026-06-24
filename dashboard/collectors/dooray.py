@@ -13,7 +13,7 @@ import urllib.request
 import urllib.parse
 import urllib.error
 
-from dashboard import config, storage
+from dashboard import config, storage, chat
 from dashboard.collectors import base
 
 # 워크플로 class → 한국어 라벨(개별 workflow 이름이 없을 때의 기본)
@@ -134,16 +134,22 @@ def _collect(now, force=False):
     if not config.DOORAY_TOKEN:
         return  # 토큰 미설정 → 조용히 통과(빈 상태)
     now_dt, today = _today_kst(now)
+    prev = storage.get_dooray()
 
     # 매일 아침(해당 주간만) 갱신 — 오늘 이미 수집했으면 skip, 아침(6시) 전엔 대기.
     if not force:
-        prev = storage.get_dooray()
         if prev:
             pd = _today_kst(prev.get("collected_at") or 0)[1]
             if pd == today:
                 return  # 오늘 이미 수집됨
         if now_dt.hour < 6:
             return  # 아침 전 — 대기
+
+    # 이전 요약 캐시(업무별) — 내용(본문/코멘트) 변경 없으면 재사용 → Gemini 토큰 절감.
+    prev_sum = {}
+    if prev:
+        for pt in ((prev.get("payload") or {}).get("tasks") or []):
+            prev_sum[pt.get("id")] = (pt.get("_sumkey"), pt.get("ai_summary"))
 
     pid = config.DOORAY_PROJECT_ID
 
@@ -193,6 +199,7 @@ def _collect(now, force=False):
             "createdAt": p.get("createdAt"),
             "body": "",
             "comments": [],
+            "ai_summary": None,
         }
         if i < _DETAIL_CAP:
             try:
@@ -202,6 +209,18 @@ def _collect(now, force=False):
             except Exception:  # noqa: BLE001
                 pass
             t["comments"] = _comments(pid, p.get("id"))
+            # AI 요약 — 내용(본문/코멘트) 변경 없으면 이전 요약 재사용(토큰 절감), 바뀐 업무만 재요약.
+            last_at = t["comments"][-1].get("at") if t["comments"] else ""
+            sumkey = "%d|%d|%s" % (len(t["body"]), len(t["comments"]), last_at or "")
+            pk, ps = prev_sum.get(t["id"], (None, None))
+            if pk == sumkey and ps:
+                t["ai_summary"] = ps
+            elif t["body"] or t["comments"]:
+                try:
+                    t["ai_summary"] = chat.summarize_task(t["subject"], t["body"], t["comments"])
+                except Exception:  # noqa: BLE001 — 요약 실패는 수집을 막지 않음
+                    t["ai_summary"] = None
+            t["_sumkey"] = sumkey
         tasks.append(t)
 
     payload = {

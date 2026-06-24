@@ -361,6 +361,70 @@ def api_dooray():
     return p
 
 
+# ── 주간보고 구성(레이아웃) — 누구나 수정 가능한 공용 설정 ───────────
+# 대항목(도전/개선/생존 등)·목표문장·프로젝트(태그) 배정/순서. 기본값은 파트장 메일 기준.
+_DEFAULT_LAYOUT = {
+    "buckets": [
+        {"label": "도전",
+         "goal": "AI 빅데이터 파이프라인을 구축·확장하고 시각화 PoC를 운영 환경에 배포까지 완료한다",
+         "tags": ["I-BED&DIVA"]},
+        {"label": "개선",
+         "goal": "데이터 플랫폼 업무 표준을 정의·적용하고 관련 문서를 작성·관리 체계까지 구축한다",
+         "tags": ["공통프레임워크", "공통표준용어사전"]},
+        {"label": "생존",
+         "goal": "핵심 과제 2건의 주요 산출물을 개발·검증·배포까지 완료한다",
+         "tags": ["데이터넷", "한국형 그린버튼", "총량제", "GREP", "GSEED", "LCA"]},
+    ]
+}
+
+
+def _sanitize_layout(d):
+    """외부 입력 레이아웃을 안전 범위로 정규화. 유효치 않으면 None."""
+    if not isinstance(d, dict):
+        return None
+    buckets = d.get("buckets")
+    if not isinstance(buckets, list) or not buckets:
+        return None
+    out = []
+    for b in buckets[:20]:
+        if not isinstance(b, dict):
+            continue
+        label = str(b.get("label") or "").strip()[:40]
+        if not label:
+            continue
+        goal = str(b.get("goal") or "").strip()[:300]
+        tg = []
+        tags = b.get("tags")
+        if isinstance(tags, list):
+            for t in tags[:80]:
+                s = str(t).strip()[:80]
+                if s:
+                    tg.append(s)
+        out.append({"label": label, "goal": goal, "tags": tg})
+    return {"buckets": out} if out else None
+
+
+@app.get("/api/dooray/layout")
+def api_dooray_layout_get():
+    row = storage.get_dooray_layout()
+    if row is None:
+        return {"layout": _DEFAULT_LAYOUT, "default": True}
+    return {"layout": row["layout"], "default": False, "updated_at": row["updated_at"]}
+
+
+class LayoutBody(BaseModel):
+    layout: dict
+
+
+@app.put("/api/dooray/layout")
+def api_dooray_layout_put(body: LayoutBody):
+    clean = _sanitize_layout(body.layout)
+    if clean is None:
+        return {"ok": False, "error": "레이아웃 형식이 올바르지 않습니다(대항목이 비었습니다)"}
+    storage.set_dooray_layout(json.dumps(clean, ensure_ascii=False), int(time.time()))
+    return {"ok": True, "layout": clean}
+
+
 # ── 인사이트: 룰 탐지 findings + AI 종합 코멘트 ───────────────────────
 @app.get("/api/insights")
 def api_insights():

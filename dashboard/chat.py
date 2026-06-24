@@ -199,6 +199,36 @@ def answer_question(question):
     return _gemini_call(prompt, max_tokens=800)
 
 
+# ── 업무 요약(Dooray 업무 본문+코멘트 → 운영 보고용 2~3문장) ──────────
+TASK_SUMMARY_PROMPT = (
+    "너는 데이터플랫폼파트 업무 보조다. 아래 한 업무의 '업무 내용'과 '코멘트'를 "
+    "운영자가 빠르게 파악하도록 2~3문장으로 요약하라. "
+    "무엇을 했고/진행 중인지, 핵심 결과나 다음 단계가 있으면 포함하라. "
+    "한국어 존댓말(~입니다체)·전문적이고 명확한 어조로 작성하라. "
+    "내용에 없는 사실을 지어내지 마라(환각 금지). 감탄사·이모지·과장·불릿은 쓰지 마라.")
+
+
+def summarize_task(subject, body, comments):
+    """업무 본문+코멘트를 운영 보고용으로 요약. 키 미설정/내용 없음/실패 시 None."""
+    if not config.GEMINI_API_KEY:
+        return None
+    parts = []
+    b = (body or "").strip()
+    if b:
+        parts.append("[업무 내용]\n" + b)
+    for c in (comments or [])[:12]:
+        txt = (c.get("text") or "").strip()
+        if txt:
+            parts.append("[코멘트] " + txt)
+    content = "\n\n".join(parts).strip()
+    if not content:
+        return None  # 본문·코멘트 둘 다 없으면 요약하지 않음
+    prompt = (TASK_SUMMARY_PROMPT + "\n\n[업무 제목]\n" + (subject or "") +
+              "\n\n[업무 내용·코멘트]\n" + content[:6000])
+    res = _gemini_call(prompt, max_tokens=400)
+    return res.get("answer")
+
+
 # ── 인사이트 AI 설명(룰 findings → 우선순위·원인·조치) ────────────────
 INSIGHT_PROMPT = (
     "너는 dataviz-prod 운영 모니터링 분석가다. 아래는 룰 엔진이 탐지한 '주목 신호' 목록이다. "

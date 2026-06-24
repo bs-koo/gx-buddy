@@ -1343,6 +1343,15 @@ html, body {
 .task-comment-head { font-size: 12px; font-weight: 600; color: var(--accent); margin-bottom: 3px; }
 .task-comment-line { margin: 1px 0; font-size: 13px; color: var(--muted); line-height: 1.6; }
 
+/* 업무 상세 모달 — AI 요약(맨 위, 강조) */
+.task-ai {
+  margin-bottom: 18px; padding: 14px 16px; border-radius: 12px;
+  border: none; border-left: 3px solid var(--accent);
+  background: linear-gradient(180deg, rgba(49,130,246,0.06), var(--bg-card));
+}
+.task-ai-h { font-size: 12px; font-weight: 700; color: var(--accent); letter-spacing: 0.02em; margin-bottom: 6px; }
+.task-ai-b { font-size: 13.5px; color: var(--text); line-height: 1.65; white-space: pre-wrap; }
+
 /* ── 사이드바 하단 데이터 소스 연결 상태 ──────────────── */
 .sidebar-sources { flex-direction: column; align-items: stretch; gap: 8px; }
 .src-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
@@ -1374,3 +1383,49 @@ html, body {
 .md-note { margin: 6px 0; padding: 7px 11px; background: var(--bg-elev2); border-left: 2px solid var(--border-hover); border-radius: 6px; font-size: 12.5px; color: var(--muted); }
 .md code { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-size: 12px; background: var(--bg-elev); padding: 1px 5px; border-radius: 5px; }
 .md b, .md strong { font-weight: 700; color: var(--text); }
+
+/* ── 카드 헤더 도구(복사·편집) ─────────────────────────── */
+.card-head-tools { display: flex; gap: 8px; margin-left: auto; }
+
+/* ── 주간보고 화면: 대항목(버킷) 계층 ─────────────────── */
+.rep-bucket { margin-bottom: 26px; }
+.rep-bucket-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 2px solid var(--border); }
+.rep-bucket-label { font-size: 15px; font-weight: 800; color: var(--text); }
+.rep-bucket-goal { font-size: 12.5px; color: var(--muted); }
+.rep-bucket .report-group { margin-left: 6px; }
+
+/* ── 넓은 모달 + 푸터 + 기본 버튼 ──────────────────────── */
+.modal.modal-lg { max-width: 640px; width: 92%; }
+.modal-foot { display: flex; align-items: center; gap: 10px; padding: 14px 20px; border-top: 1px solid var(--border); }
+.modal-foot .btn-primary { margin-left: auto; }
+.layout-msg { font-size: 12.5px; color: var(--muted); margin-right: auto; }
+.btn-primary { border: none; background: var(--accent); color: #fff; font-family: inherit; font-size: 13px; font-weight: 700; padding: 8px 16px; border-radius: 10px; cursor: pointer; transition: .12s; }
+.btn-primary:hover { background: var(--accent-hi); }
+
+/* ── 구성 편집기 ──────────────────────────────────────── */
+.le-bucket { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; background: var(--bg-card); }
+.le-bucket-hd { display: flex; align-items: center; gap: 8px; }
+.le-label { flex: 1; min-width: 0; font-size: 14px; font-weight: 700; color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; font-family: inherit; }
+.le-goal { width: 100%; box-sizing: border-box; margin-top: 8px; font-size: 13px; color: var(--muted); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; font-family: inherit; }
+.le-ctrl { display: flex; gap: 4px; flex: 0 0 auto; }
+.le-ctrl-btn { border: 1px solid var(--border); background: var(--bg-card); color: var(--muted); font-family: inherit; font-size: 12px; min-width: 30px; height: 30px; padding: 0 8px; border-radius: 8px; cursor: pointer; }
+.le-ctrl-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.le-ctrl-btn:disabled { opacity: .35; cursor: default; }
+.le-ctrl-btn.le-del:hover:not(:disabled) { border-color: var(--alarm); color: var(--alarm); }
+.le-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; min-height: 36px; padding: 5px; border-radius: 10px; transition: background .12s, box-shadow .12s; }
+.le-chips.le-drop { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.le-ua-chips { border: 1px dashed var(--border-hover); }
+.le-chip { display: inline-flex; align-items: center; gap: 2px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 999px; padding: 2px 6px 2px 4px; cursor: grab; box-shadow: var(--shadow-card); }
+.le-chip:active { cursor: grabbing; }
+.le-chip.dragging { opacity: .4; }
+.le-grip { color: var(--label); font-size: 12px; padding: 0 2px; line-height: 1; cursor: grab; }
+.le-chip-nm { font-size: 12.5px; color: var(--text); font-weight: 600; padding: 0 4px 0 2px; }
+.le-mini { min-width: 22px; height: 22px; padding: 0; border-radius: 6px; font-size: 11px; }
+.le-mini.le-x:hover:not(:disabled) { border-color: var(--alarm); color: var(--alarm); }
+.le-empty { font-size: 12px; color: var(--label); align-self: center; }
+.le-add { width: 100%; border: 1px dashed var(--border-hover); background: transparent; color: var(--accent); font-family: inherit; font-size: 13px; font-weight: 600; padding: 9px; border-radius: 10px; cursor: pointer; margin-bottom: 16px; }
+.le-add:hover { background: var(--accent-soft); }
+.le-unassigned { border-top: 1px solid var(--border); padding-top: 14px; }
+.le-section-h { font-size: 12.5px; font-weight: 700; color: var(--muted); margin-bottom: 10px; }
+.le-ua-row { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+.le-sel { font-family: inherit; font-size: 12.5px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); color: var(--text); }

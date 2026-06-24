@@ -77,6 +77,11 @@ def init_db():
           payload_json TEXT NOT NULL,
           collected_at INTEGER NOT NULL);
 
+        CREATE TABLE IF NOT EXISTS dooray_layout (
+          id INTEGER PRIMARY KEY CHECK (id=1),
+          layout_json TEXT NOT NULL,
+          updated_at INTEGER NOT NULL);
+
         CREATE TABLE IF NOT EXISTS collect_meta (
           job TEXT PRIMARY KEY,
           last_ok_at INTEGER,
@@ -250,6 +255,35 @@ def get_dooray():
         if row is None:
             return None
         return {"payload": json.loads(row["payload_json"]), "collected_at": row["collected_at"]}
+    finally:
+        conn.close()
+
+
+def get_dooray_layout():
+    """주간보고 구성(레이아웃) JSON 반환. 없으면 None."""
+    conn = connect()
+    try:
+        cur = conn.execute("SELECT layout_json, updated_at FROM dooray_layout WHERE id = 1")
+        row = cur.fetchone()
+        if row is None:
+            return None
+        return {"layout": json.loads(row["layout_json"]), "updated_at": row["updated_at"]}
+    finally:
+        conn.close()
+
+
+def set_dooray_layout(layout_json, at):
+    """주간보고 구성(레이아웃, id=1 단일행)을 교체한다. 누구나 수정(공용)."""
+    conn = connect()
+    try:
+        conn.execute("""
+            INSERT INTO dooray_layout (id, layout_json, updated_at)
+            VALUES (1, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+              layout_json=excluded.layout_json,
+              updated_at=excluded.updated_at
+        """, (layout_json, at))
+        conn.commit()
     finally:
         conn.close()
 

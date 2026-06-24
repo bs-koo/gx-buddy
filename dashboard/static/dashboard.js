@@ -1538,68 +1538,303 @@ function _doorayEmptyText(d) {
     : '두레이 토큰 미설정 — 서버 환경변수 DOORAY_TOKEN 을 설정하면 표시됩니다.';
 }
 
+var _weeklyTasks = [], _weeklyLayout = { buckets: [] }, _weeklyMeta = {};
+
 function loadWeekly() {
   var card = document.getElementById('panel-weekly');
   if (!card) return;
   var body = card.querySelector('.card-body');
-  fetchJson('/api/dooray').then(function (d) {
+  Promise.all([
+    fetchJson('/api/dooray'),
+    fetchJson('/api/dooray/layout').catch(function () { return null; })
+  ]).then(function (arr) {
+    var d = arr[0] || {};
+    _weeklyLayout = ((arr[1] || {}).layout) || { buckets: [] };
     if (d.empty) {
       var e0 = body.querySelector('[data-state="empty"]');
       if (e0) e0.textContent = _doorayEmptyText(d);
+      _toggleWeeklyTools(false);
       setState(body, 'empty'); return;
     }
     var tasks = d.tasks || [];
-    var weekName = (d.current_week || {}).name || '';
-    setText('weekly-week', weekName);
+    _weeklyTasks = tasks;
+    _weeklyMeta = { project_name: d.project_name, week: (d.current_week || {}).name || '' };
+    setText('weekly-week', _weeklyMeta.week);
     var note = document.getElementById('weekly-note');
-    if (note) note.textContent = (d.project_name || '파트업무진행') + ' · ' + (weekName || '이번 주') +
+    if (note) note.textContent = (d.project_name || '파트업무진행') + ' · ' + (_weeklyMeta.week || '이번 주') +
       ' · 업무 ' + tasks.length + '건  ·  매일 아침 자동 갱신(해당 주간만)' +
       (d.collected_at ? '  ·  최근 수집 ' + epochToKst(d.collected_at, true) : '');
     var cnt = { registered: 0, working: 0, closed: 0 };
     tasks.forEach(function (t) { var c = t.workflowClass || 'registered'; cnt[c] = (cnt[c] || 0) + 1; });
     _renderWeekSummary(tasks, cnt);
-    var groups = _groupByTag(tasks);
-    var wrap = document.getElementById('weekly-report'); wrap.innerHTML = '';
-    groups.forEach(function (g) {
-      var grp = document.createElement('div'); grp.className = 'report-group';
-      var h = document.createElement('div'); h.className = 'report-tag'; h.textContent = '[' + g.tag + ']'; grp.appendChild(h);
-      g.tasks.forEach(function (t) {
-        var item = document.createElement('button'); item.type = 'button'; item.className = 'report-task report-task--btn';
-        var head = document.createElement('div'); head.className = 'report-task-head';
-        var s = document.createElement('span'); s.className = 'report-subj'; s.textContent = t.subject;
-        var m = document.createElement('span'); m.className = 'report-meta'; m.textContent = t.assignee || '-';
-        var sb = document.createElement('span'); sb.className = 'status-badge s-' + (t.workflowClass || 'registered'); sb.textContent = t.status || '';
-        head.appendChild(s); head.appendChild(m); head.appendChild(sb);
-        if ((t.comments && t.comments.length) || (t.body || '').trim()) {
-          var more = document.createElement('span'); more.className = 'report-hasmore';
-          more.textContent = (t.comments && t.comments.length) ? ('코멘트 ' + t.comments.length) : '상세';
-          head.appendChild(more);
-        }
-        item.appendChild(head);
-        item.addEventListener('click', function () { openTaskModal(t); });
-        grp.appendChild(item);
-      });
-      wrap.appendChild(grp);
-    });
-    if (!tasks.length) {
-      var nz = document.createElement('div'); nz.className = 'insight-none-sub';
-      nz.textContent = '이번 주 등록된 업무가 없습니다.'; wrap.appendChild(nz);
-    }
+    _renderReportBuckets(tasks, _weeklyLayout);
+    _toggleWeeklyTools(true);
     setState(body, 'ok');
   }).catch(function (e) { setState(body, 'error', e.message); });
 }
 
-function _groupByTag(tasks) {
+/* 상단 도구 버튼(복사·편집) 표시 토글 */
+function _toggleWeeklyTools(show) {
+  ['weekly-copy', 'weekly-edit'].forEach(function (id) {
+    var b = document.getElementById(id); if (b) b.hidden = !show;
+  });
+}
+
+/* tag -> tasks 맵(태그 없으면 '기타') */
+function _projectMap(tasks) {
   var m = {};
   tasks.forEach(function (t) {
     var keys = (t.tags && t.tags.length) ? t.tags : ['기타'];
     keys.forEach(function (k) { (m[k] = m[k] || []).push(t); });
   });
-  return Object.keys(m).map(function (k) { return { tag: k, tasks: m[k] }; })
-    .sort(function (a, b) {
-      if ((a.tag === '기타') !== (b.tag === '기타')) return a.tag === '기타' ? 1 : -1;
-      return (b.tasks.length - a.tasks.length) || a.tag.localeCompare(b.tag);
+  return m;
+}
+
+/* 레이아웃(buckets)에 따라 tasks 를 대항목→프로젝트로 정리. 미배정 태그는 etc(기타). */
+function _bucketize(tasks, layout) {
+  var byTag = _projectMap(tasks);
+  var assigned = {};
+  var buckets = ((layout && layout.buckets) || []).map(function (b) {
+    var projs = [];
+    (b.tags || []).forEach(function (tag) {
+      if (byTag[tag] && byTag[tag].length) { projs.push({ tag: tag, tasks: byTag[tag] }); assigned[tag] = 1; }
     });
+    return { label: b.label, goal: b.goal, projects: projs };
+  });
+  var etc = [];
+  Object.keys(byTag).forEach(function (tag) { if (!assigned[tag]) etc.push({ tag: tag, tasks: byTag[tag] }); });
+  etc.sort(function (a, b) {
+    if ((a.tag === '기타') !== (b.tag === '기타')) return a.tag === '기타' ? 1 : -1;
+    return (b.tasks.length - a.tasks.length) || a.tag.localeCompare(b.tag);
+  });
+  return { buckets: buckets, etc: etc };
+}
+
+/* 프로젝트(태그) 그룹 1개 렌더 — 태그 헤더 + 클릭형 업무행 */
+function _renderProjectGroup(p) {
+  var grp = document.createElement('div'); grp.className = 'report-group';
+  var h = document.createElement('div'); h.className = 'report-tag'; h.textContent = '[' + p.tag + ']'; grp.appendChild(h);
+  p.tasks.forEach(function (t) {
+    var item = document.createElement('button'); item.type = 'button'; item.className = 'report-task report-task--btn';
+    var head = document.createElement('div'); head.className = 'report-task-head';
+    var s = document.createElement('span'); s.className = 'report-subj'; s.textContent = t.subject;
+    var m = document.createElement('span'); m.className = 'report-meta'; m.textContent = t.assignee || '-';
+    var sb = document.createElement('span'); sb.className = 'status-badge s-' + (t.workflowClass || 'registered'); sb.textContent = t.status || '';
+    head.appendChild(s); head.appendChild(m); head.appendChild(sb);
+    if ((t.comments && t.comments.length) || (t.body || '').trim()) {
+      var more = document.createElement('span'); more.className = 'report-hasmore';
+      more.textContent = (t.comments && t.comments.length) ? ('코멘트 ' + t.comments.length) : '상세';
+      head.appendChild(more);
+    }
+    item.appendChild(head);
+    item.addEventListener('click', function () { openTaskModal(t); });
+    grp.appendChild(item);
+  });
+  return grp;
+}
+
+/* 주간보고 본문 — 대항목(버킷) 계층 + 목표문장 + 프로젝트별 업무(메일 형식) */
+function _renderReportBuckets(tasks, layout) {
+  var wrap = document.getElementById('weekly-report'); if (!wrap) return; wrap.innerHTML = '';
+  if (!tasks.length) {
+    var nz = document.createElement('div'); nz.className = 'insight-none-sub';
+    nz.textContent = '이번 주 등록된 업무가 없습니다.'; wrap.appendChild(nz); return;
+  }
+  var bz = _bucketize(tasks, layout);
+  function section(label, goal, projects) {
+    var sec = document.createElement('div'); sec.className = 'rep-bucket';
+    var bh = document.createElement('div'); bh.className = 'rep-bucket-head';
+    var lbl = document.createElement('span'); lbl.className = 'rep-bucket-label'; lbl.textContent = '[' + label + ']'; bh.appendChild(lbl);
+    if (goal) { var g = document.createElement('span'); g.className = 'rep-bucket-goal'; g.textContent = goal; bh.appendChild(g); }
+    sec.appendChild(bh);
+    projects.forEach(function (p) { sec.appendChild(_renderProjectGroup(p)); });
+    wrap.appendChild(sec);
+  }
+  bz.buckets.forEach(function (bk) { if (bk.projects.length) section(bk.label, bk.goal, bk.projects); });
+  if (bz.etc.length) section('기타', '', bz.etc);
+}
+
+/* 복사 — 파트장 메일 형식(담당자 제외, 레이아웃 순서) */
+function _copyWeeklyMail() {
+  var bz = _bucketize(_weeklyTasks, _weeklyLayout);
+  var out = ['🗓️ 전주 실적'];
+  function emit(label, goal, projects) {
+    out.push(goal ? ('[' + label + '] ' + goal) : ('[' + label + ']'));
+    projects.forEach(function (p) {
+      out.push(p.tag);
+      var seen = {};
+      p.tasks.forEach(function (t) { var s = (t.subject || '').trim(); if (!s || seen[s]) return; seen[s] = 1; out.push('o ' + s); });
+      out.push('');
+    });
+  }
+  bz.buckets.forEach(function (bk) { if (bk.projects.length) emit(bk.label, bk.goal, bk.projects); });
+  if (bz.etc.length) emit('기타', '', bz.etc);
+  out.push('🗓️ 금주 계획'); out.push('(다음 주 계획을 작성하세요)'); out.push('');
+  out.push('📋 기타사항'); out.push('특이사항 없음');
+  var text = out.join('\n');
+  var done = function () { var c = document.getElementById('weekly-copy'); if (c) { c.textContent = '복사됨 ✓'; setTimeout(function () { c.textContent = '복사'; }, 1500); } };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, done);
+  else done();
+}
+
+/* ── 구성 편집(대항목·목표·프로젝트 배정/순서) — 누구나 수정, 서버 저장 ── */
+var _editLayout = null;
+
+function bindWeeklyTools() {
+  var copyBtn = document.getElementById('weekly-copy');
+  if (copyBtn) copyBtn.addEventListener('click', _copyWeeklyMail);
+  var editBtn = document.getElementById('weekly-edit');
+  if (editBtn) editBtn.addEventListener('click', openLayoutEditor);
+  var ov = document.getElementById('layout-modal');
+  function hide() { if (ov) ov.hidden = true; }
+  var close = document.getElementById('layout-modal-close'); if (close) close.addEventListener('click', hide);
+  var cancel = document.getElementById('layout-cancel'); if (cancel) cancel.addEventListener('click', hide);
+  if (ov) ov.addEventListener('click', function (ev) { if (ev.target === ov) hide(); });
+  var save = document.getElementById('layout-save'); if (save) save.addEventListener('click', _saveLayout);
+}
+
+function openLayoutEditor() {
+  var base = (_weeklyLayout && _weeklyLayout.buckets) ? _weeklyLayout : { buckets: [] };
+  _editLayout = JSON.parse(JSON.stringify(base));
+  if (!_editLayout.buckets) _editLayout.buckets = [];
+  var msg = document.getElementById('layout-msg'); if (msg) msg.textContent = '';
+  _renderLayoutEditor();
+  var ov = document.getElementById('layout-modal'); if (ov) ov.hidden = false;
+}
+
+function _allWeekTags() {
+  var s = {};
+  _weeklyTasks.forEach(function (t) { (t.tags && t.tags.length ? t.tags : ['기타']).forEach(function (tag) { s[tag] = 1; }); });
+  return Object.keys(s);
+}
+
+function _swap(arr, i, j) { if (i < 0 || j < 0 || i >= arr.length || j >= arr.length) return; var t = arr[i]; arr[i] = arr[j]; arr[j] = t; }
+
+function _leBtn(label, disabled, fn, extra) {
+  var b = document.createElement('button'); b.type = 'button'; b.className = 'le-ctrl-btn ' + (extra || '');
+  b.textContent = label; b.disabled = !!disabled;
+  if (!disabled) b.addEventListener('click', fn);
+  return b;
+}
+
+var _dragSrc = null;
+
+function _clearDrop() {
+  var els = document.querySelectorAll('.le-drop');
+  for (var i = 0; i < els.length; i++) els[i].classList.remove('le-drop');
+}
+
+/* 드래그 이동: src(태그)를 toBucket 의 insertIdx 위치로(미배정→버킷 포함) */
+function _moveTag(src, toBucket, insertIdx) {
+  var tag = src.tag;
+  if (src.b >= 0) { var arr = _editLayout.buckets[src.b].tags; var k = arr.indexOf(tag); if (k >= 0) arr.splice(k, 1); }
+  var dst = _editLayout.buckets[toBucket].tags;
+  var ex = dst.indexOf(tag); if (ex >= 0) { dst.splice(ex, 1); if (ex < insertIdx) insertIdx--; }
+  if (insertIdx < 0) insertIdx = 0;
+  if (insertIdx > dst.length) insertIdx = dst.length;
+  dst.splice(insertIdx, 0, tag);
+}
+
+function _renderLayoutEditor() {
+  var host = document.getElementById('layout-editor'); if (!host) return; host.innerHTML = '';
+  var buckets = _editLayout.buckets;
+  var assigned = {};
+  buckets.forEach(function (b) { (b.tags || []).forEach(function (tg) { assigned[tg] = 1; }); });
+
+  /* 드래그 가능한 프로젝트 칩(bi<0 = 미배정 풀) */
+  function makeChip(tag, bi) {
+    var chip = document.createElement('span'); chip.className = 'le-chip'; chip.draggable = true;
+    var grip = document.createElement('span'); grip.className = 'le-grip'; grip.setAttribute('aria-hidden', 'true'); grip.textContent = '⠿'; chip.appendChild(grip);
+    var nm = document.createElement('span'); nm.className = 'le-chip-nm'; nm.textContent = tag; chip.appendChild(nm);
+    if (bi >= 0) {
+      chip.appendChild(_leBtn('×', false, function () {
+        var arr = buckets[bi].tags; var k = arr.indexOf(tag); if (k >= 0) arr.splice(k, 1); _renderLayoutEditor();
+      }, 'le-mini le-x'));
+    }
+    chip.addEventListener('dragstart', function (e) {
+      _dragSrc = { b: bi, tag: tag }; e.dataTransfer.effectAllowed = 'move';
+      try { e.dataTransfer.setData('text/plain', tag); } catch (err) { /* IE 가드 */ }
+      setTimeout(function () { chip.classList.add('dragging'); }, 0);
+    });
+    chip.addEventListener('dragend', function () { chip.classList.remove('dragging'); _clearDrop(); });
+    return chip;
+  }
+
+  /* 드롭 영역(toBucket<0 = 미배정으로 빼기) */
+  function dropZone(el, toBucket) {
+    el.addEventListener('dragover', function (e) { e.preventDefault(); el.classList.add('le-drop'); });
+    el.addEventListener('dragleave', function (e) { if (e.target === el) el.classList.remove('le-drop'); });
+    el.addEventListener('drop', function (e) {
+      e.preventDefault(); el.classList.remove('le-drop');
+      if (!_dragSrc) return;
+      if (toBucket < 0) {
+        if (_dragSrc.b >= 0) { var arr = buckets[_dragSrc.b].tags; var k = arr.indexOf(_dragSrc.tag); if (k >= 0) arr.splice(k, 1); }
+      } else {
+        var tc = (e.target && e.target.closest) ? e.target.closest('.le-chip') : null;
+        var idx = buckets[toBucket].tags.length;
+        if (tc) { var ci = Array.prototype.indexOf.call(el.children, tc); if (ci >= 0) idx = ci; }
+        _moveTag(_dragSrc, toBucket, idx);
+      }
+      _dragSrc = null; _renderLayoutEditor();
+    });
+  }
+
+  buckets.forEach(function (b, bi) {
+    var card = document.createElement('div'); card.className = 'le-bucket';
+    var hd = document.createElement('div'); hd.className = 'le-bucket-hd';
+    var lbl = document.createElement('input'); lbl.className = 'le-label'; lbl.value = b.label || ''; lbl.placeholder = '대항목 이름';
+    lbl.addEventListener('input', function () { b.label = lbl.value; });
+    hd.appendChild(lbl);
+    var ctrl = document.createElement('div'); ctrl.className = 'le-ctrl';
+    ctrl.appendChild(_leBtn('▲', bi === 0, function () { _swap(buckets, bi, bi - 1); _renderLayoutEditor(); }));
+    ctrl.appendChild(_leBtn('▼', bi === buckets.length - 1, function () { _swap(buckets, bi, bi + 1); _renderLayoutEditor(); }));
+    ctrl.appendChild(_leBtn('삭제', false, function () { buckets.splice(bi, 1); _renderLayoutEditor(); }, 'le-del'));
+    hd.appendChild(ctrl);
+    card.appendChild(hd);
+    var goal = document.createElement('input'); goal.className = 'le-goal'; goal.value = b.goal || ''; goal.placeholder = '목표 문장(선택)';
+    goal.addEventListener('input', function () { b.goal = goal.value; });
+    card.appendChild(goal);
+    var chips = document.createElement('div'); chips.className = 'le-chips';
+    (b.tags || []).forEach(function (tag) { chips.appendChild(makeChip(tag, bi)); });
+    if (!(b.tags || []).length) { var em = document.createElement('span'); em.className = 'le-empty'; em.textContent = '여기로 프로젝트를 끌어다 놓으세요'; chips.appendChild(em); }
+    dropZone(chips, bi);
+    card.appendChild(chips);
+    host.appendChild(card);
+  });
+
+  var add = document.createElement('button'); add.type = 'button'; add.className = 'le-add'; add.textContent = '+ 대항목 추가';
+  add.addEventListener('click', function () { buckets.push({ label: '새 대항목', goal: '', tags: [] }); _renderLayoutEditor(); });
+  host.appendChild(add);
+
+  var unassigned = _allWeekTags().filter(function (tg) { return !assigned[tg]; });
+  var ua = document.createElement('div'); ua.className = 'le-unassigned';
+  var uh = document.createElement('div'); uh.className = 'le-section-h'; uh.textContent = '미배정 프로젝트(이번 주) — 드래그해 대항목으로 옮기세요 · 기본 [기타]로 표시'; ua.appendChild(uh);
+  var uchips = document.createElement('div'); uchips.className = 'le-chips le-ua-chips';
+  unassigned.forEach(function (tag) { uchips.appendChild(makeChip(tag, -1)); });
+  if (!unassigned.length) { var none = document.createElement('span'); none.className = 'le-empty'; none.textContent = '없음 — 모든 프로젝트가 배정됨'; uchips.appendChild(none); }
+  dropZone(uchips, -1);
+  ua.appendChild(uchips);
+  host.appendChild(ua);
+}
+
+function _saveLayout() {
+  var clean = {
+    buckets: (_editLayout.buckets || [])
+      .filter(function (b) { return (b.label || '').trim(); })
+      .map(function (b) { return { label: (b.label || '').trim(), goal: (b.goal || '').trim(), tags: (b.tags || []).slice() }; })
+  };
+  var msg = document.getElementById('layout-msg'); if (msg) msg.textContent = '저장 중…';
+  fetch('/api/dooray/layout', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ layout: clean })
+  }).then(function (r) { return r.json(); }).then(function (res) {
+    if (res && res.ok) {
+      _weeklyLayout = res.layout || clean;
+      if (msg) msg.textContent = '저장됨 ✓';
+      _renderReportBuckets(_weeklyTasks, _weeklyLayout);
+      setTimeout(function () { var ov = document.getElementById('layout-modal'); if (ov) ov.hidden = true; }, 600);
+    } else if (msg) { msg.textContent = (res && res.error) || '저장 실패'; }
+  }).catch(function (e) { if (msg) msg.textContent = '저장 실패: ' + e.message; });
 }
 
 function _renderWeekSummary(tasks, cnt) {
@@ -1709,6 +1944,12 @@ function openTaskModal(t) {
   document.getElementById('task-modal-sub').textContent =
     ((t.tags && t.tags.length) ? '[' + t.tags.join('] [') + ']  ' : '') + (t.assignee || '-') + ' · ' + (t.status || '');
   var b = document.getElementById('task-modal-body'); b.innerHTML = '';
+  if ((t.ai_summary || '').trim()) {
+    var ai = document.createElement('div'); ai.className = 'task-ai';
+    var ah = document.createElement('div'); ah.className = 'task-ai-h'; ah.textContent = '🤖 AI 요약';
+    var ab = document.createElement('div'); ab.className = 'task-ai-b'; ab.textContent = t.ai_summary;   /* XSS: AI → textContent */
+    ai.appendChild(ah); ai.appendChild(ab); b.appendChild(ai);
+  }
   var sec1 = document.createElement('div'); sec1.className = 'task-sec';
   var h1 = document.createElement('div'); h1.className = 'task-sec-h'; h1.textContent = '업무 내용'; sec1.appendChild(h1);
   var bt = (t.body || '').trim();
@@ -1879,6 +2120,7 @@ function init() {
   bindHostModal();           /* EC2 상세 모달 닫기/배경/ESC */
   bindDbModal();             /* RDS 상세 모달 닫기/배경/ESC */
   bindTaskModal();           /* 업무 상세 모달 닫기/배경/ESC */
+  bindWeeklyTools();         /* 주간보고 복사·구성편집 */
   bindRouter();              /* 라우터 시작(초기 hash → 활성 뷰 로드) */
 
   /* 공통 메타(마지막 갱신·stale 배너) 최초 1회 */
