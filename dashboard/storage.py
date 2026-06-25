@@ -96,7 +96,6 @@ def init_db():
           assignee TEXT,
           week TEXT,
           body TEXT,
-          ai_summary TEXT,
           first_at INTEGER,
           last_at INTEGER,
           PRIMARY KEY (month, tag, subject));
@@ -119,11 +118,6 @@ def init_db():
             conn.execute("ALTER TABLE alarm_state ADD COLUMN detail_json TEXT")
         except sqlite3.OperationalError:
             pass  # duplicate column name → 이미 존재(정상)
-        # 월간 히스토리 AI 요약 컬럼(기존 named volume 마이그레이션 — 새 DB 는 CREATE 에 포함).
-        try:
-            conn.execute("ALTER TABLE dooray_task_history ADD COLUMN ai_summary TEXT")
-        except sqlite3.OperationalError:
-            pass  # 이미 존재(정상)
         conn.commit()
     finally:
         conn.close()
@@ -356,9 +350,9 @@ def upsert_dooray_history(rows):
     try:
         conn.executemany("""
             INSERT INTO dooray_task_history
-              (month, tag, subject, status, wfclass, assignee, week, body, ai_summary, first_at, last_at)
+              (month, tag, subject, status, wfclass, assignee, week, body, first_at, last_at)
             VALUES
-              (:month, :tag, :subject, :status, :wfclass, :assignee, :week, :body, :ai_summary, :last_at, :last_at)
+              (:month, :tag, :subject, :status, :wfclass, :assignee, :week, :body, :last_at, :last_at)
             ON CONFLICT(month, tag, subject) DO UPDATE SET
               status=excluded.status,
               wfclass=excluded.wfclass,
@@ -366,7 +360,6 @@ def upsert_dooray_history(rows):
               week=excluded.week,
               body=CASE WHEN length(COALESCE(excluded.body,'')) >= length(COALESCE(dooray_task_history.body,''))
                         THEN excluded.body ELSE dooray_task_history.body END,
-              ai_summary=COALESCE(excluded.ai_summary, dooray_task_history.ai_summary),
               last_at=excluded.last_at
         """, rows)
         conn.commit()
@@ -379,7 +372,7 @@ def get_dooray_history(month):
     conn = connect()
     try:
         cur = conn.execute("""
-            SELECT month, tag, subject, status, wfclass, assignee, week, body, ai_summary, first_at, last_at
+            SELECT month, tag, subject, status, wfclass, assignee, week, body, first_at, last_at
             FROM dooray_task_history WHERE month = ? ORDER BY tag, first_at
         """, (month,))
         return [dict(r) for r in cur.fetchall()]

@@ -1724,6 +1724,7 @@ function sendChat(question) {
     botTextEl = botMsg.querySelector('.chat-text');
   }
   function pushText(t) {
+    if (errored) return;                             /* 에러 표시 후 늦게 온 text 프레임 무시 */
     ensureBot();
     acc += t;
     botTextEl.textContent = acc;                   /* XSS: 조각 → textContent */

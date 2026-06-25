@@ -13,6 +13,7 @@ AWS 수집은 백그라운드 Scheduler 데몬이 전담한다.
 import os
 import json
 import time
+import datetime
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Query
@@ -429,7 +430,6 @@ def api_dooray_layout_put(body: LayoutBody):
 # ── 월간 리포트: (month, tag, subject) 누적 → 프론트가 레이아웃으로 분류 ──
 @app.get("/api/dooray/monthly")
 def api_dooray_monthly(month: str = Query(None)):
-    import datetime
     # 월간 리포트는 '완료된 달'만 보여준다(진행 중인 이번 달 제외 — 매일 변해 요약 토큰 낭비).
     cur_m = datetime.datetime.fromtimestamp(
         time.time() + 9 * 3600, datetime.timezone.utc).strftime("%Y-%m")
@@ -447,7 +447,6 @@ def api_dooray_monthly(month: str = Query(None)):
         "workflowClass": r["wfclass"],
         "assignee": r["assignee"],
         "body": r["body"] or "",
-        "ai_summary": r["ai_summary"],
         "week": r["week"],
     } for r in rows]
     return {"empty": False, "month": sel, "months": months, "tasks": tasks}
