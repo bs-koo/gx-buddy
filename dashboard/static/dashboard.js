@@ -2915,8 +2915,7 @@ function bindRefresh() {
  * (이미 만료됐을 수도 있으므로) 항상 /login 으로 보낸다. */
 /* 사이드바 하단에 로그인된 공용 계정(아이디)을 표시한다. */
 function loadAccount() {
-  fetch('/api/auth/me')
-    .then(function (r) { if (handle401(r)) return null; return r.ok ? r.json() : null; })
+  fetchJson('/api/auth/me')           /* 공통 헬퍼 — handle401·HTTP 에러 처리 일원화 */
     .then(function (d) {
       if (!d || !d.username) return;
       var name = document.getElementById('account-name');
@@ -2924,7 +2923,7 @@ function loadAccount() {
       var av = document.getElementById('account-avatar');
       if (av) av.textContent = d.username.charAt(0).toUpperCase();
     })
-    .catch(function () {});
+    .catch(function () {});             /* 미인증/일시 오류 시 계정만 비움(화면 영향 없음) */
 }
 
 function bindLogout() {
