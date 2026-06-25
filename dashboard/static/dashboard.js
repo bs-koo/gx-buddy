@@ -939,22 +939,9 @@ function loadMeta() {
     } else {
       banner.hidden = true;
     }
-    /* 사이드바 데이터 소스 연결 점 — 잡 성공 여부로 색 갱신 */
-    var jobs = d.jobs || [];
-    var awsOk = jobs.some(function (j) {
-      return ['alarms', 'uptime', 'db', 'host', 'cdn'].indexOf(j.job) >= 0 && j.last_ok_at && !j.stale;
-    });
-    var dr = jobs.filter(function (j) { return j.job === 'dooray'; })[0];
-    _srcDot('src-aws-dot', awsOk);
-    _srcDot('src-dooray-dot', !!(dr && dr.last_ok_at && !dr.stale));
   }).catch(function () {
     /* meta 실패는 배너만 미갱신(다른 패널 영향 없음) */
   });
-}
-
-function _srcDot(id, ok) {
-  var el = document.getElementById(id);
-  if (el) el.classList.toggle('off', !ok);
 }
 
 /* ── 패널 1: 알람 ──────────────────────────────────────── */
